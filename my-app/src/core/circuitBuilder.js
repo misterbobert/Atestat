@@ -2,6 +2,39 @@ import { computeNets } from "./nets";
 import { solveMNA } from "./mnaSolver";
 import { formatSI } from "./formatting";
 
+// Parse values that may come as numbers OR formatted SI strings (e.g. "1.00MΩ", "200mΩ", "9V")
+function parseSIValue(v) {
+  if (typeof v === "number") return v;
+  if (v == null) return NaN;
+
+  const s = String(v).trim();
+
+  // remove spaces + common units
+  const clean = s.replace(/\s+/g, "").replace(/[ΩVA]/gi, "");
+
+  // number + optional SI prefix
+  const m = clean.match(/^(-?\d+(?:\.\d+)?)([pnumkMGTµu])?$/);
+  if (!m) {
+    const n = Number(clean);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  const num = Number(m[1]);
+  const p = m[2] || "";
+
+  const mult =
+    p === "p" ? 1e-12 :
+    p === "n" ? 1e-9 :
+    p === "u" || p === "µ" ? 1e-6 :
+    p === "m" ? 1e-3 :
+    p === "k" ? 1e3 :
+    p === "M" ? 1e6 :
+    p === "G" ? 1e9 :
+    p === "T" ? 1e12 : 1;
+
+  return num * mult;
+}
+
 // Build a net index for each node by connectivity (wires)
 function buildNodeToNet(nodes, wires) {
   const nets = computeNets(nodes, wires);
@@ -25,7 +58,7 @@ export function solveNormalDC(items, nodes, wires) {
     const { nodeToNet, nets } = buildNodeToNet(nodes, wires);
     const nodeCount = nets.length;
 
-    // choose a ground: first net that has at least one connection (or 0)
+    // Choose a ground. With GMIN below, it's safe even for multiple disconnected circuits.
     const ground = 0;
 
     const resistors = [];
@@ -40,49 +73,60 @@ export function solveNormalDC(items, nodes, wires) {
       const na = nodeToNet.get(a.id);
       const nb = nodeToNet.get(b.id);
 
+      if (na == null || nb == null) continue;
+
       if (it.type === "resistor") {
-        const R = Math.max(1e-6, Number(it.R ?? 100));
+        const Rraw = parseSIValue(it.R ?? 100);
+        const R = Math.max(1e-6, Number.isFinite(Rraw) ? Rraw : 100);
         resistors.push({ a: na, b: nb, R });
       }
 
       if (it.type === "switch") {
-        if (it.closed) {
-          resistors.push({ a: na, b: nb, R: 1e-4 });
-        } else {
-          // open => ignore
-        }
+        if (it.closed) resistors.push({ a: na, b: nb, R: 1e-4 });
       }
 
       if (it.type === "bulb") {
-        // treat bulb as resistor ~ 30Ω (tweak as you like)
-        resistors.push({ a: na, b: nb, R: 30 });
+        // optional: allow bulb.R, else default 30Ω
+        const Rbraw = parseSIValue(it.R ?? 30);
+        const Rb = Math.max(1e-6, Number.isFinite(Rbraw) ? Rbraw : 30);
+        resistors.push({ a: na, b: nb, R: Rb });
       }
 
       if (it.type === "battery") {
         // model: ideal V source in series with Rint
-        // MNA supports ideal V source; for Rint we add resistor between internal node and terminal
-        // We'll implement a small trick: insert an internal net index
-        const V = Number(it.V ?? 9);
-        const Rint = Math.max(1e-6, Number(it.Rint ?? 0.2));
+        const Vraw = parseSIValue(it.V ?? 9);
+        const Rintraw = parseSIValue(it.Rint ?? 0.2);
 
-        const internal = nodeCount + voltageSources.length; // temporary unique node index
-        // We'll build with expanded nodeCount
-        // Instead simpler: represent as Vsource between na and nb, plus resistor parallel? (not correct)
-        // We'll do series properly by expanding nodes below.
+        const V = Number.isFinite(Vraw) ? Vraw : 9;
+        const Rint = Math.max(1e-6, Number.isFinite(Rintraw) ? Rintraw : 0.2);
+
+        const internal = nodeCount + voltageSources.length; // unique internal node index
         voltageSources.push({ a: na, b: internal, V });
         resistors.push({ a: internal, b: nb, R: Rint });
       }
 
-      // meters: we compute after solve using node voltages
+      if (it.type === "ammeter") {
+        // ammeter = nearly short circuit
+        resistors.push({ a: na, b: nb, R: 1e-4 });
+      }
+
+      // voltmeter/ohmmeter don't affect circuit (open) - computed after solve
     }
 
-    // Fix expanded nodes from battery internal nodes:
+    // expanded nodeCount because of internal battery nodes
     const maxNodeIndex =
       Math.max(
         nodeCount - 1,
         ...resistors.map((r) => Math.max(r.a, r.b)),
         ...voltageSources.map((v) => Math.max(v.a, v.b))
       ) + 1;
+
+    // ✅ GMIN: tie all nodes weakly to ground to avoid singular matrices (disconnected circuits)
+    const GMIN_R = 1e12;
+    for (let i = 0; i < maxNodeIndex; i++) {
+      if (i === ground) continue;
+      resistors.push({ a: i, b: ground, R: GMIN_R });
+    }
 
     const mna = solveMNA({
       nodeCount: maxNodeIndex,
@@ -100,7 +144,7 @@ export function solveNormalDC(items, nodes, wires) {
   }
 }
 
-export function applySolutionToItems(items, sol) {
+export function applySolutionToItems(items, nodes, sol) {
   if (!sol?.ok) {
     return items.map((it) => {
       const x = { ...it };
@@ -112,34 +156,39 @@ export function applySolutionToItems(items, sol) {
 
   const { nodeToNet, mna } = sol;
 
-  // helper to get net for item pin
-  function pinNet(nodes, itemId, pinName) {
-    // nodes not available here; meters computed in outer layer normally
-    void nodes; void itemId; void pinName;
-    return null;
+  function V(net) {
+    return mna?.V?.[net] ?? 0;
   }
 
-  // We cannot read nodes here (kept minimal), so meters will be approximated:
-  // We'll set displays only using existing mapping if user adds a wire between the two meter pins.
-
-  // We'll compute voltmeter/ohmmeter using the net indices of its pins by scanning a hidden field injected by UI later.
-  // To keep it functional now: display will be computed in the UI layer if you want exact.
-  // We'll still do bulb brightness roughly from voltage difference across its two nets, by storing item._netA/_netB in solve step.
   return items.map((it) => {
     const copy = { ...it };
+    const { a, b } = itemPins(nodes, it.id);
+    if (!a || !b) return copy;
 
-    // Meters default
-    if (copy.type === "voltmeter" || copy.type === "ammeter" || copy.type === "ohmmeter") {
-      // We will populate from external logic later; keep placeholder
-      if (!copy.display) copy.display = "—";
+    const na = nodeToNet.get(a.id);
+    const nb = nodeToNet.get(b.id);
+    if (na == null || nb == null) return copy;
+
+    const Va = V(na);
+    const Vb = V(nb);
+    const dV = Va - Vb;
+
+    if (copy.type === "bulb") {
+      const dv = Math.abs(dV);
+      copy.brightness = Math.max(0, Math.min(1, dv / 6)); // 6V => 100% (tweak)
     }
 
-    // Bulb brightness (rough): if we stored nets, use them
-    if (copy.type === "bulb" && copy._netA != null && copy._netB != null) {
-      const Va = mna.V[copy._netA] ?? 0;
-      const Vb = mna.V[copy._netB] ?? 0;
-      const dv = Math.abs(Va - Vb);
-      copy.brightness = Math.max(0, Math.min(1, dv / 6));
+    if (copy.type === "voltmeter") {
+      copy.display = `${Math.abs(dV).toFixed(2)} V`;
+    }
+
+    if (copy.type === "ammeter") {
+      const Rsh = 1e-4;
+      copy.display = `${(dV / Rsh).toFixed(3)} A`;
+    }
+
+    if (copy.type === "ohmmeter") {
+      copy.display = "—";
     }
 
     return copy;

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useReducer, useRef } from "react";
-import { defaultPropsForType, makeItemWithNodes } from "../core/defaults";
+import { defaultPropsForType, makeItemWithNodes, recalcAllNodes } from "../core/defaults";
 import { clamp } from "../core/utils";
 import { screenToWorld } from "../core/coords";
 import { solveNormalDC, applySolutionToItems } from "../core/circuitBuilder";
@@ -44,13 +44,15 @@ function reducer(state, action) {
       return { ...state, cam: action.cam };
     case "SET_SELECTED":
       return { ...state, selectedId: action.id };
-    case "SET_ITEMS_NODES_WIRES":
+    case "SET_ITEMS_NODES_WIRES": {
+      const nodes = recalcAllNodes(action.items, action.nodes);
       return {
         ...state,
         items: action.items,
-        nodes: action.nodes,
+        nodes,
         wires: action.wires,
       };
+    }
     case "SET_WIRE_STATE":
       return { ...state, wire: { ...state.wire, ...action.wire } };
     case "SET_RUNNING":
@@ -265,7 +267,7 @@ export function VoltLabProvider({ children }) {
       const sol = solveNormalDC(state.items, state.nodes, state.wires);
       dispatch({ type: "SET_SOLUTION", sol });
 
-      const items = applySolutionToItems(state.items, sol);
+      const items = applySolutionToItems(state.items, state.nodes, sol);
       dispatch({ type: "SET_ITEMS_NODES_WIRES", items, nodes: state.nodes, wires: state.wires });
 
       dispatch({ type: "SET_STATUS", text: sol?.ok ? "Running" : "Solve failed" });

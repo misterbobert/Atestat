@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useVoltLab } from "./useVoltLabStore.jsx";
 import { screenToWorld } from "../core/coords";
 import { clamp } from "../core/utils";
+import { recalcItemNodes } from "../core/defaults";
 
 export function useWorkspaceEvents(workspaceRef, overlayRef) {
   const { state, actions, dispatch } = useVoltLab();
@@ -50,11 +51,20 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
         const sx = e.clientX - r.left;
         const sy = e.clientY - r.top;
         const w = screenToWorld(sx, sy, state.cam);
-        // update item
-        const items = state.items.map((it) =>
-          it.id === drag.id ? { ...it, x: w.x - drag.dx, y: w.y - drag.dy } : it
-        );
-        dispatch({ type: "SET_ITEMS_NODES_WIRES", items, nodes: state.nodes, wires: state.wires });
+
+        // 1) item nou (mutat)
+        const movedItem = state.items.find((it) => it.id === drag.id);
+        if (!movedItem) return;
+
+        const nextItem = { ...movedItem, x: w.x - drag.dx, y: w.y - drag.dy };
+
+        // 2) items actualizate
+        const items = state.items.map((it) => (it.id === drag.id ? nextItem : it));
+
+        // 3) nodes recalculate doar pentru itemul mutat
+        const nodes = recalcItemNodes(nextItem, state.nodes);
+
+        dispatch({ type: "SET_ITEMS_NODES_WIRES", items, nodes, wires: state.wires });
       }
 
       // wire preview
