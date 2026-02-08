@@ -97,12 +97,22 @@ export default function Overlay({ overlayRef }) {
   function handleNodeDown(node) {
     if (state.mode !== "wire") return;
 
+    // start wire
     if (!state.wire.startNodeId) {
-      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: node.id } });
-    } else {
-      actions.addWire(state.wire.startNodeId, node.id);
-      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
+      dispatch({
+        type: "SET_WIRE_STATE",
+        wire: { startNodeId: node.id, points: [], previewWorld: null },
+      });
+      return;
     }
+
+    // finish wire using points
+    actions.addWire(state.wire.startNodeId, node.id, state.wire.points || []);
+
+    dispatch({
+      type: "SET_WIRE_STATE",
+      wire: { startNodeId: null, points: [], previewWorld: null },
+    });
   }
 
   return (

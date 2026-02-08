@@ -95,7 +95,6 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
       e.preventDefault();
     }
 
-    // wire click selecting nodes
     function onClick(e) {
       if (state.mode !== "wire") return;
 
@@ -119,19 +118,30 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
       }
 
       const hit = best && bestD < 26 * 26 ? best : null;
-      if (!hit) return;
 
+      // 1) dacă nu am început firul: click pe un nod îl pornește
       if (!state.wire.startNodeId) {
-        dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: hit.id } });
-      } else {
-        actions.addWire(state.wire.startNodeId, hit.id);
-        dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null } });
+        if (!hit) return;
+        dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: hit.id, points: [], previewWorld: w } });
+        return;
       }
+
+      // 2) dacă am început firul:
+      // 2a) click pe un nod => finalizează firul (cu punctele intermediare)
+      if (hit) {
+        actions.addWire(state.wire.startNodeId, hit.id, state.wire.points || []);
+        dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, points: [], previewWorld: null } });
+        return;
+      }
+
+      // 2b) click pe background => adaugă un colț (punct intermediar)
+      const pts = state.wire.points || [];
+      dispatch({ type: "SET_WIRE_STATE", wire: { points: [...pts, w], previewWorld: w } });
     }
 
     function onKeyDown(e) {
       if (e.key === "Escape") {
-        dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
+        dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, points: [], previewWorld: null } });
         return;
       }
 

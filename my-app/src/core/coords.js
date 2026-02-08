@@ -102,9 +102,17 @@ export function drawWires(ctx, nodes, wires, cam, wireState) {
     const a = nodePos(w.aNodeId);
     const b = nodePos(w.bNodeId);
     if (!a || !b) continue;
+    const pts = [
+      a,
+      ...((w.points || []).map((p) => worldToScreen(p.x, p.y, cam))),
+      b,
+    ];
+
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
     ctx.stroke();
   }
 
@@ -129,13 +137,17 @@ export function drawWires(ctx, nodes, wires, cam, wireState) {
   // preview wire
   if (wireState?.startNodeId && wireState?.previewWorld) {
     const a = nodePos(wireState.startNodeId);
-    const b = worldToScreen(wireState.previewWorld.x, wireState.previewWorld.y, cam);
-    if (a && b) {
+    if (a) {
+      const mids = (wireState.points || []).map((p) => worldToScreen(p.x, p.y, cam));
+      const b = worldToScreen(wireState.previewWorld.x, wireState.previewWorld.y, cam);
+
+      const pts = [a, ...mids, b];
+
       ctx.strokeStyle = "rgba(255,255,255,0.55)";
       ctx.setLineDash([6, 6]);
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
       ctx.stroke();
       ctx.setLineDash([]);
     }

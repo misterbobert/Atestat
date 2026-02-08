@@ -23,6 +23,7 @@ const initialState = {
 
   wire: {
     startNodeId: null,
+    points: [],
     previewWorld: null,
   },
 
@@ -35,7 +36,10 @@ function reducer(state, action) {
       return {
         ...state,
         mode: action.mode,
-        wire: action.mode === "wire" ? state.wire : { startNodeId: null, previewWorld: null },
+        wire:
+          action.mode === "wire"
+            ? state.wire
+            : { startNodeId: null, points: [], previewWorld: null },
       };
 
     case "SET_STATUS":
@@ -93,7 +97,7 @@ export function VoltLabProvider({ children }) {
       dispatch({ type: "SET_SELECTED", id: snap.selectedId ?? null });
       dispatch({ type: "SET_CAM", cam: snap.cam ?? state.cam });
       dispatch({ type: "SET_MODE", mode: snap.mode ?? "select" });
-      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
+      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, points: [], previewWorld: null } });
     },
   });
 
@@ -154,13 +158,13 @@ export function VoltLabProvider({ children }) {
       dispatch({ type: "SET_SELECTED", id: null });
       dispatch({ type: "SET_SOLUTION", sol: null });
       dispatch({ type: "SET_RUNNING", running: false });
-      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
+      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, points: [], previewWorld: null } });
       pushHistory("delete");
     }
 
     function clearWires() {
       dispatch({ type: "SET_ITEMS_NODES_WIRES", items: state.items, nodes: state.nodes, wires: [] });
-      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
+      dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, points: [], previewWorld: null } });
       pushHistory("clear wires");
       setStatus("Cleared wires");
     }
@@ -234,17 +238,38 @@ export function VoltLabProvider({ children }) {
       });
     }
 
-    function addWire(aNodeId, bNodeId) {
+    function addWire(aNodeId, bNodeId, points = []) {
       if (!aNodeId || !bNodeId || aNodeId === bNodeId) return;
 
-      const exists = state.wires.some(
-        (w) =>
-          (w.aNodeId === aNodeId && w.bNodeId === bNodeId) ||
-          (w.aNodeId === bNodeId && w.bNodeId === aNodeId)
-      );
-      if (exists) return;
+      const normA = aNodeId;
+      const normB = bNodeId;
 
-      const wire = { aNodeId, bNodeId };
+      // dacă există deja wire între aceleași 2 noduri, îl UPDATE-uim (nu îl ignorăm)
+      let replaced = false;
+      const nextWires = state.wires.map((w) => {
+        const same =
+          (w.aNodeId === normA && w.bNodeId === normB) ||
+          (w.aNodeId === normB && w.bNodeId === normA);
+
+        if (!same) return w;
+
+        replaced = true;
+        return { ...w, aNodeId: normA, bNodeId: normB, points }; // ✅ păstrează points
+      });
+
+      if (replaced) {
+        dispatch({
+          type: "SET_ITEMS_NODES_WIRES",
+          items: state.items,
+          nodes: state.nodes,
+          wires: nextWires,
+        });
+        pushHistory("wire edit");
+        return;
+      }
+
+      // altfel, adaugă wire nou
+      const wire = { aNodeId: normA, bNodeId: normB, points };
 
       dispatch({
         type: "SET_ITEMS_NODES_WIRES",
