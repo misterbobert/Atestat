@@ -16,27 +16,74 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     }
 
-    function onMouseDown(e) {
-      console.log("mousedown", tool);
-      // click on background
-      if (e.target !== el && e.target !== overlayRef.current && !el.contains(e.target)) return;
+    function isBackgroundTarget(target) {
+      // background = workspace root sau overlay root (nu panouri/UI)
+      return target === el || target === overlayRef.current;
+    }
 
+    function onMouseDown(e) {
+      // acceptăm doar click pe fundal (workspace/overlay), nu pe UI/panouri
+      if (!isBackgroundTarget(e.target)) return;
+
+      // deselect doar în select mode
       if (state.mode === "select") {
         dispatch({ type: "SET_SELECTED", id: null });
       }
 
-      // pan start (right click or middle)
+      // ✅ PAN cu left-drag DOAR în select mode (ca să nu strice wire)
+      if (e.button === 0 && state.mode === "select") {
+        dispatch({
+          type: "SET_CAM",
+          cam: {
+            ...state.cam,
+            __panCandidate: {
+              sx: e.clientX,
+              sy: e.clientY,
+              x: state.cam.x,
+              y: state.cam.y,
+              started: false,
+            },
+          },
+        });
+        return;
+      }
+
+      // pan start (right click or middle) – permis în orice mode
       if (e.button === 1 || e.button === 2) {
         e.preventDefault();
         dispatch({
           type: "SET_CAM",
-          cam: { ...state.cam, __pan: { sx: e.clientX, sy: e.clientY, x: state.cam.x, y: state.cam.y } },
+          cam: {
+            ...state.cam,
+            __pan: { sx: e.clientX, sy: e.clientY, x: state.cam.x, y: state.cam.y },
+          },
         });
       }
     }
 
     function onMouseMove(e) {
-      // pan
+      // ✅ left-pan candidate (select mode only)
+      const cand = state.cam.__panCandidate;
+      if (cand) {
+        const dx = e.clientX - cand.sx;
+        const dy = e.clientY - cand.sy;
+
+        if (!cand.started) {
+          // threshold mic ca să nu pornească pan la click simplu
+          if (Math.abs(dx) + Math.abs(dy) > 3) {
+            dispatch({
+              type: "SET_CAM",
+              cam: { ...state.cam, __panCandidate: { ...cand, started: true } },
+            });
+          }
+        }
+
+        if (cand.started) {
+          actions.setCam({ x: cand.x + dx, y: cand.y + dy });
+        }
+      }
+
+      // pan (middle/right)
       const pan = state.cam.__pan;
       if (pan) {
         const dx = e.clientX - pan.sx;
@@ -44,7 +91,7 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
         actions.setCam({ x: pan.x + dx, y: pan.y + dy });
       }
 
-      // drag
+      // drag item
       const drag = state.cam.__drag;
       if (drag) {
         const r = el.getBoundingClientRect();
@@ -52,16 +99,11 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
         const sy = e.clientY - r.top;
         const w = screenToWorld(sx, sy, state.cam);
 
-        // 1) item nou (mutat)
         const movedItem = state.items.find((it) => it.id === drag.id);
         if (!movedItem) return;
 
         const nextItem = { ...movedItem, x: w.x - drag.dx, y: w.y - drag.dy };
-
-        // 2) items actualizate
         const items = state.items.map((it) => (it.id === drag.id ? nextItem : it));
-
-        // 3) nodes recalculate doar pentru itemul mutat
         const nodes = recalcItemNodes(nextItem, state.nodes);
 
         dispatch({ type: "SET_ITEMS_NODES_WIRES", items, nodes, wires: state.wires });
@@ -76,6 +118,10 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
     }
 
     function onMouseUp() {
+      // dacă am avut doar click (fără drag) în select mode, păstrăm comportamentul de deselect (deja făcut la mousedown)
+      if (state.cam.__panCandidate) {
+        dispatch({ type: "SET_CAM", cam: { ...state.cam, __panCandidate: null } });
+      }
       if (state.cam.__pan) {
         dispatch({ type: "SET_CAM", cam: { ...state.cam, __pan: null } });
       }
@@ -84,11 +130,25 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
       }
     }
 
+    // ✅ ZOOM pe cursor
     function onWheel(e) {
       e.preventDefault();
+
+      const r = el.getBoundingClientRect();
+      const sx = e.clientX - r.left;
+      const sy = e.clientY - r.top;
+
+      // world coord sub cursor înainte de zoom
+      const w = screenToWorld(sx, sy, state.cam);
+
       const delta = -e.deltaY;
-      const z = clamp(state.cam.z * (delta > 0 ? 1.08 : 0.92), 0.25, 3.0);
-      actions.setCam({ z });
+      const newZ = clamp(state.cam.z * (delta > 0 ? 1.08 : 0.92), 0.25, 3.0);
+
+      // păstrăm w sub cursor după zoom
+      const newX = sx - w.x * newZ;
+      const newY = sy - w.y * newZ;
+
+      actions.setCam({ x: newX, y: newY, z: newZ });
     }
 
     function onContextMenu(e) {
@@ -119,22 +179,21 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
 
       const hit = best && bestD < 26 * 26 ? best : null;
 
-      // 1) dacă nu am început firul: click pe un nod îl pornește
+      // 1) start fir
       if (!state.wire.startNodeId) {
         if (!hit) return;
         dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: hit.id, points: [], previewWorld: w } });
         return;
       }
 
-      // 2) dacă am început firul:
-      // 2a) click pe un nod => finalizează firul (cu punctele intermediare)
+      // 2) finalizează pe nod
       if (hit) {
         actions.addWire(state.wire.startNodeId, hit.id, state.wire.points || []);
         dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, points: [], previewWorld: null } });
         return;
       }
 
-      // 2b) click pe background => adaugă un colț (punct intermediar)
+      // 3) adaugă colț pe background
       const pts = state.wire.points || [];
       dispatch({ type: "SET_WIRE_STATE", wire: { points: [...pts, w], previewWorld: w } });
     }
@@ -152,7 +211,7 @@ export function useWorkspaceEvents(workspaceRef, overlayRef) {
         return;
       }
 
-      if (e.key === "Delete" || e.key === "Backspace") {
+      if (e.key === "Delete" ) {
         if (state.selectedId) actions.deleteItem(state.selectedId);
       }
 
