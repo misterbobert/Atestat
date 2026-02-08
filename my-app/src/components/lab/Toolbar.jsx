@@ -25,32 +25,32 @@ export default function Toolbar() {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Btn active={state.mode === "select"} onClick={() => actions.setMode("select")}>
-        Select
+        Selectează
       </Btn>
       <Btn active={state.mode === "wire"} onClick={() => actions.setMode("wire")}>
-        Wire
+        Cablu
       </Btn>
 
       <div className="mx-1 hidden h-6 w-px bg-white/10 md:block" />
 
       {!state.running ? (
         <Btn onClick={() => actions.play()} active={false}>
-          ▶ Play
+          Start
         </Btn>
       ) : (
         <Btn onClick={() => actions.stop()} active={false}>
-          ⏹ Stop
+          Stop
         </Btn>
       )}
 
       <Btn danger onClick={() => actions.clearWires()}>
-        Clear wires
+        Stergeți firele
       </Btn>
 
       <div className="mx-1 hidden h-6 w-px bg-white/10 md:block" />
 
-      <Btn onClick={() => actions.undo()}>↶ Undo</Btn>
-      <Btn onClick={() => actions.redo()}>↷ Redo</Btn>
+      <Btn onClick={() => actions.undo()}>↶ Înapoi</Btn>
+      <Btn onClick={() => actions.redo()}>↷ Înainte</Btn>
     </div>
   );
 }

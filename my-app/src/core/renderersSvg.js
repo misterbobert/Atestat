@@ -30,7 +30,7 @@ export function switchSVG(closed) {
         ? `<path d="M80 60 H120" stroke="rgba(120,255,180,0.95)" stroke-width="6" stroke-linecap="round"/>`
         : `<path d="M80 60 L120 40" stroke="rgba(255,255,255,0.88)" stroke-width="6" stroke-linecap="round"/>`
     }
-    <text x="100" y="102" text-anchor="middle" font-size="14" fill="rgba(255,255,255,0.65)" font-family="ui-sans-serif,system-ui">${closed ? "closed" : "open"}</text>
+    <text x="100" y="102" text-anchor="middle" font-size="14" fill="rgba(255,255,255,0.65)" font-family="ui-sans-serif,system-ui">${closed ? "închis" : "deschis"}</text>
   </svg>`;
 }
 
@@ -53,6 +53,6 @@ export function batterySVG(V, Rint) {
     <rect x="55" y="40" width="90" height="40" rx="10" fill="rgba(0,0,0,0.25)" stroke="rgba(255,255,255,0.18)"/>
     <rect x="145" y="52" width="10" height="16" rx="3" fill="rgba(255,255,255,0.30)"/>
     <text x="100" y="66" text-anchor="middle" font-size="14" fill="rgba(255,255,255,0.85)" font-family="ui-sans-serif,system-ui">${a}</text>
-    <text x="100" y="98" text-anchor="middle" font-size="12" fill="rgba(255,255,255,0.65)" font-family="ui-sans-serif,system-ui">Rint ${b}</text>
+    <text x="100" y="98" text-anchor="middle" font-size="12" fill="rgba(255,255,255,0.65)" font-family="ui-sans-serif,system-ui">Rezistență internă ${b}</text>
   </svg>`;
 }

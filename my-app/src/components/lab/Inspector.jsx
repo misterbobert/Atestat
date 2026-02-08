@@ -38,26 +38,26 @@ export default function Inspector() {
       {!selected ? (
         <div className="space-y-3 text-sm text-white/70">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            Drop components from the library.
+            Trage componente din bibliotecă.
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            Use <b>Select</b> to move/select. Use <b>Wire</b> to connect nodes.
+            Folosește <b>Selectează</b> pentru a muta/selecta. Folosește <b>Cablu</b> pentru a conecta componente între ele.
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            Press <b>Play</b> to solve DC and display meters & bulb brightness.
+            Apasă <b>Start</b> pentru a rula circuitul creat.
           </div>
         </div>
       ) : (
         <div className="space-y-3">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-white/60">Selected</div>
+            <div className="text-xs text-white/60">Nume</div>
             <div className="text-sm font-semibold">
               {selected.type} <span className="text-white/40">#{selected.id.slice(-4)}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Size (%)">
+            <Field label="Mărime (%)">
               <Input
                 type="number"
                 step="1"
@@ -65,7 +65,7 @@ export default function Inspector() {
                 onChange={(v) => actions.updateItem(selected.id, { sizePct: Number(v) })}
               />
             </Field>
-            <Field label="Rotation (deg)">
+            <Field label="Rotație (grade)">
               <Input
                 type="number"
                 step="1"
@@ -77,7 +77,7 @@ export default function Inspector() {
 
           {selected.type === "battery" && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Voltage (V)">
+              <Field label="Tensiune (V)">
                 <Input
                   type="number"
                   step="0.1"
@@ -85,7 +85,7 @@ export default function Inspector() {
                   onChange={(v) => actions.updateItem(selected.id, { V: Number(v) })}
                 />
               </Field>
-              <Field label="Rint (Ω)">
+              <Field label="Rezistență internă (Ω)">
                 <Input
                   type="number"
                   step="0.01"
@@ -97,7 +97,7 @@ export default function Inspector() {
           )}
 
           {selected.type === "resistor" && (
-            <Field label="Resistance (Ω)">
+            <Field label="Rezistență (Ω)">
               <Input
                 type="number"
                 step="1"
@@ -108,28 +108,22 @@ export default function Inspector() {
           )}
 
           {selected.type === "switch" && (
-            <Field label="Closed">
+            <Field label="Stadiu">
               <button
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
                 onClick={() => actions.updateItem(selected.id, { closed: !selected.closed })}
               >
-                {selected.closed ? "Closed" : "Open"}
+                {selected.closed ? "Închis" : "Deschis"}
               </button>
             </Field>
           )}
 
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <button
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-              onClick={() => actions.duplicateItem(selected.id)}
-            >
-              Duplicate
-            </button>
+          <div className="grid grid-cols-1 gap-3 pt-2">
             <button
               className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm hover:bg-rose-500/15"
               onClick={() => actions.deleteItem(selected.id)}
             >
-              Delete
+              Șterge
             </button>
           </div>
         </div>
