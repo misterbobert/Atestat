@@ -10,6 +10,7 @@ const Ctx = createContext(null);
 const initialState = {
   mode: "select",
   running: false,
+  isRunning: false, // ✅ compat
   statusText: "Ready",
 
   items: [],
@@ -19,8 +20,6 @@ const initialState = {
   selectedId: null,
 
   cam: { x: 0, y: 0, z: 1 },
-  pan: null,
-  drag: null,
 
   wire: {
     startNodeId: null,
@@ -38,27 +37,30 @@ function reducer(state, action) {
         mode: action.mode,
         wire: action.mode === "wire" ? state.wire : { startNodeId: null, previewWorld: null },
       };
+
     case "SET_STATUS":
       return { ...state, statusText: action.text };
+
     case "SET_CAM":
       return { ...state, cam: action.cam };
+
     case "SET_SELECTED":
       return { ...state, selectedId: action.id };
+
     case "SET_ITEMS_NODES_WIRES": {
       const nodes = recalcAllNodes(action.items, action.nodes);
-      return {
-        ...state,
-        items: action.items,
-        nodes,
-        wires: action.wires,
-      };
+      return { ...state, items: action.items, nodes, wires: action.wires };
     }
+
     case "SET_WIRE_STATE":
       return { ...state, wire: { ...state.wire, ...action.wire } };
+
     case "SET_RUNNING":
-      return { ...state, running: action.running };
+      return { ...state, running: action.running, isRunning: action.running };
+
     case "SET_SOLUTION":
       return { ...state, sol: action.sol };
+
     default:
       return state;
   }
@@ -67,7 +69,9 @@ function reducer(state, action) {
 export function VoltLabProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // History (undo/redo) – store only the “important” pieces
+  // ca să putem calcula coordonate la drag/drag-drop
+  const workspaceElRef = useRef(null);
+
   const history = useHistoryCore({
     getSnapshot: () => ({
       items: state.items,
@@ -82,9 +86,9 @@ export function VoltLabProvider({ children }) {
       dispatch({ type: "SET_SOLUTION", sol: null });
       dispatch({
         type: "SET_ITEMS_NODES_WIRES",
-        items: snap.items,
-        nodes: snap.nodes,
-        wires: snap.wires,
+        items: snap.items ?? state.items,
+        nodes: snap.nodes ?? state.nodes,
+        wires: snap.wires ?? state.wires,
       });
       dispatch({ type: "SET_SELECTED", id: snap.selectedId ?? null });
       dispatch({ type: "SET_CAM", cam: snap.cam ?? state.cam });
@@ -92,8 +96,6 @@ export function VoltLabProvider({ children }) {
       dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
     },
   });
-
-  const workspaceRefLast = useRef(null);
 
   const actions = useMemo(() => {
     function pushHistory(label) {
@@ -113,7 +115,7 @@ export function VoltLabProvider({ children }) {
       const cam = {
         ...state.cam,
         ...patch,
-        z: clamp((patch.z ?? state.cam.z), 0.25, 3.0),
+        z: clamp(patch.z ?? state.cam.z, 0.25, 3.0),
       };
       dispatch({ type: "SET_CAM", cam });
     }
@@ -143,7 +145,10 @@ export function VoltLabProvider({ children }) {
 
       const items = state.items.filter((x) => x.id !== id);
       const nodes = state.nodes.filter((n) => n.itemId !== id);
-      const wires = state.wires.filter((w) => w.aItemId !== id && w.bItemId !== id);
+
+      // scoate firele care aveau noduri șterse
+      const alive = new Set(nodes.map((n) => n.id));
+      const wires = state.wires.filter((w) => alive.has(w.aNodeId) && alive.has(w.bNodeId));
 
       dispatch({ type: "SET_ITEMS_NODES_WIRES", items, nodes, wires });
       dispatch({ type: "SET_SELECTED", id: null });
@@ -153,22 +158,6 @@ export function VoltLabProvider({ children }) {
       pushHistory("delete");
     }
 
-    function duplicateItem(id) {
-      const src = state.items.find((x) => x.id === id);
-      if (!src) return;
-      const type = src.type;
-      addItemAt(type, src.x + 60, src.y + 30);
-      // copy properties on last item
-      const last = state.items[state.items.length - 1];
-      // (state updates async, so simplest: push a second update via snapshot after add)
-      // We'll do a safe approach: schedule in microtask
-      queueMicrotask(() => {
-        const newest = history.getLatestItems()?.at(-1);
-        // fallback: no-op
-        void newest;
-      });
-    }
-
     function clearWires() {
       dispatch({ type: "SET_ITEMS_NODES_WIRES", items: state.items, nodes: state.nodes, wires: [] });
       dispatch({ type: "SET_WIRE_STATE", wire: { startNodeId: null, previewWorld: null } });
@@ -176,79 +165,86 @@ export function VoltLabProvider({ children }) {
       setStatus("Cleared wires");
     }
 
-    // DnD drop handler
-    function handleDrop(e, workspaceRef) {
-      e.preventDefault();
-      workspaceRefLast.current = workspaceRef?.current ?? null;
+    // ✅ IMPORTANT: handleDrop compat cu ambele stiluri
+    // - vechi: handleDrop(e, workspaceRef)
+    // - nou: handleDrop(type, clientX, clientY, workspaceEl)
+    function handleDrop(...args) {
+      // (e, workspaceRef)
+      if (args[0] && typeof args[0] === "object" && "dataTransfer" in args[0]) {
+        const e = args[0];
+        const workspaceRef = args[1];
 
-      let payload = null;
-      try {
-        payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
-      } catch {
-        payload = null;
+        e.preventDefault();
+
+        const el = workspaceRef?.current ?? workspaceElRef.current;
+        if (!el) return;
+
+        workspaceElRef.current = el;
+
+        let payload = null;
+        try {
+          payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
+        } catch {
+          payload = null;
+        }
+        if (!payload?.type) return;
+
+        const rect = el.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const w = screenToWorld(sx, sy, state.cam);
+
+        addItemAt(payload.type, w.x, w.y);
+        return;
       }
-      if (!payload?.type) return;
 
-      const rect = workspaceRef.current.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
+      // (type, clientX, clientY, workspaceEl)
+      const [type, clientX, clientY, workspaceEl] = args;
+      if (!type || !workspaceEl) return;
+
+      workspaceElRef.current = workspaceEl;
+
+      const rect = workspaceEl.getBoundingClientRect();
+      const sx = clientX - rect.left;
+      const sy = clientY - rect.top;
       const w = screenToWorld(sx, sy, state.cam);
 
-      addItemAt(payload.type, w.x, w.y);
+      addItemAt(type, w.x, w.y);
     }
 
-    // Selection + dragging
     function onItemMouseDown(itemId, e) {
+      e.stopPropagation?.();
       dispatch({ type: "SET_SELECTED", id: itemId });
       if (state.mode !== "select") return;
 
-      // start drag
-      const rect = workspaceRefLast.current?.getBoundingClientRect();
-      if (!rect) return;
+      const el = workspaceElRef.current;
+      if (!el) return;
 
+      const rect = el.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const w = screenToWorld(sx, sy, state.cam);
 
-      dispatch({
-        type: "SET_WIRE_STATE",
-        wire: state.wire,
-      });
+      const it = state.items.find((x) => x.id === itemId);
+      if (!it) return;
 
-      dispatch({
-        type: "SET_STATUS",
-        text: "Dragging",
-      });
-
-      dispatch({
-        type: "__DRAG_START__",
-      });
-
-      // store drag into state.pan to avoid extra reducer complexity:
       dispatch({
         type: "SET_CAM",
-        cam: {
-          ...state.cam,
-          __drag: { id: itemId, dx: w.x - (state.items.find((x) => x.id === itemId)?.x ?? 0), dy: w.y - (state.items.find((x) => x.id === itemId)?.y ?? 0) },
-        },
+        cam: { ...state.cam, __drag: { id: itemId, dx: w.x - it.x, dy: w.y - it.y } },
       });
     }
 
-    // Wire operations
     function addWire(aNodeId, bNodeId) {
       if (!aNodeId || !bNodeId || aNodeId === bNodeId) return;
 
-      const a = state.nodes.find((n) => n.id === aNodeId);
-      const b = state.nodes.find((n) => n.id === bNodeId);
-      if (!a || !b) return;
+      const exists = state.wires.some(
+        (w) =>
+          (w.aNodeId === aNodeId && w.bNodeId === bNodeId) ||
+          (w.aNodeId === bNodeId && w.bNodeId === aNodeId)
+      );
+      if (exists) return;
 
-      const wire = {
-        id: crypto.randomUUID(),
-        aNodeId,
-        bNodeId,
-        aItemId: a.itemId,
-        bItemId: b.itemId,
-      };
+      const wire = { aNodeId, bNodeId };
 
       dispatch({
         type: "SET_ITEMS_NODES_WIRES",
@@ -259,7 +255,7 @@ export function VoltLabProvider({ children }) {
       pushHistory("wire");
     }
 
-    // Play/Stop
+    // ▶ Play / Stop
     function play() {
       dispatch({ type: "SET_RUNNING", running: true });
       dispatch({ type: "SET_STATUS", text: "Solving..." });
@@ -277,13 +273,13 @@ export function VoltLabProvider({ children }) {
       dispatch({ type: "SET_RUNNING", running: false });
       dispatch({ type: "SET_SOLUTION", sol: null });
 
-      // clear dynamic displays
       const items = state.items.map((it) => {
         const copy = { ...it };
         if (copy.type === "voltmeter" || copy.type === "ammeter" || copy.type === "ohmmeter") copy.display = "—";
         if (copy.type === "bulb") copy.brightness = 0;
         return copy;
       });
+
       dispatch({ type: "SET_ITEMS_NODES_WIRES", items, nodes: state.nodes, wires: state.wires });
       dispatch({ type: "SET_STATUS", text: "Stopped" });
     }
@@ -299,15 +295,14 @@ export function VoltLabProvider({ children }) {
       setMode,
       setStatus,
       setCam,
+
       handleDrop,
+      onItemMouseDown,
+      addWire,
 
       updateItem,
       deleteItem,
-      duplicateItem,
       clearWires,
-
-      onItemMouseDown,
-      addWire,
 
       play,
       stop,

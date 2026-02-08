@@ -29,7 +29,6 @@ function Comp({ item, selected, onSelect, cam }) {
         onSelect(item.id, e);
       }}
     >
-      {/* IMPORTANT: SVG-ul nu trebuie să prindă click-uri */}
       <div
         className="w-full h-full pointer-events-none"
         dangerouslySetInnerHTML={{ __html: renderItemSVG(item) }}
@@ -41,17 +40,15 @@ function Comp({ item, selected, onSelect, cam }) {
 function NodePin({ node, cam, active, onMouseDown }) {
   const p = worldToScreen(node.x, node.y, cam);
 
-  // mărime constantă pe ecran (ca să rămână ușor de prins la zoom)
+  // mărime constantă pe ecran (ușor de prins la zoom)
   const r = 7;
+
+  // ✅ semn pin
+  const sign = node.name === "a" ? "−" : node.name === "b" ? "+" : null;
 
   return (
     <div
-      className={[
-        "absolute rounded-full",
-        active ? "bg-cyan-200 ring-2 ring-cyan-200/80" : "bg-cyan-300/90 ring-1 ring-black/40",
-        "shadow",
-        "pointer-events-auto",
-      ].join(" ")}
+      className="absolute pointer-events-auto z-[9999]" // ✅ peste tot
       style={{
         left: p.x - r,
         top: p.y - r,
@@ -64,7 +61,32 @@ function NodePin({ node, cam, active, onMouseDown }) {
         onMouseDown(node, e);
       }}
       title={`${node.itemId}:${node.name ?? ""}`}
-    />
+    >
+      {/* dot */}
+      <div
+        className={[
+          "w-full h-full rounded-full",
+          active ? "bg-cyan-200 ring-2 ring-cyan-200/80" : "bg-cyan-300/90 ring-1 ring-black/40",
+          "shadow",
+        ].join(" ")}
+      />
+
+      {/* ✅ badge + / - */}
+      {sign && (
+        <div
+          className={[
+            "absolute left-1/2 -translate-x-1/2 -top-5",
+            "px-2 py-[2px] rounded-full",
+            "text-[12px] font-bold leading-none",
+            "bg-[#0b0f17]/90 text-white",
+            "ring-1 ring-white/20 shadow",
+            "pointer-events-none",
+          ].join(" ")}
+        >
+          {sign}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -73,7 +95,6 @@ export default function Overlay({ overlayRef }) {
   const cam = state.cam;
 
   function handleNodeDown(node) {
-    // în select mode nu pornim drag de pe pin (doar prevenim să fie “în spate”)
     if (state.mode !== "wire") return;
 
     if (!state.wire.startNodeId) {

@@ -12,7 +12,7 @@ export function defaultPropsForType(type) {
   if (type === "battery") return { V: 9, Rint: 0.2, sizePct: 100, rot: 0 };
   if (type === "resistor") return { R: 100, sizePct: 100, rot: 0 };
   if (type === "switch") return { closed: true, sizePct: 100, rot: 0 };
-  if (type === "bulb") return { sizePct: 100, rot: 0, brightness: 0 };
+  if (type === "bulb") return { R: 30, sizePct: 100, rot: 0, brightness: 0 };
   if (type === "voltmeter") return { display: "—", sizePct: 100, rot: 0 };
   if (type === "ammeter") return { display: "—", sizePct: 100, rot: 0 };
   if (type === "ohmmeter") return { display: "—", sizePct: 100, rot: 0 };

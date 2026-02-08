@@ -173,10 +173,15 @@ export function applySolutionToItems(items, nodes, sol) {
     const Vb = V(nb);
     const dV = Va - Vb;
 
-    if (copy.type === "bulb") {
-      const dv = Math.abs(dV);
-      copy.brightness = Math.max(0, Math.min(1, dv / 6)); // 6V => 100% (tweak)
-    }
+if (copy.type === "bulb") {
+  const Rb = Math.max(1e-6, Number(copy.R ?? 30)); // rezistența becului
+  const V = Math.abs(dV);
+
+  const P = (V * V) / Rb;   // puterea disipată
+  const Pnom = 0.5;         // 0.5W = 100% (tweak după gust)
+
+  copy.brightness = Math.max(0, Math.min(1, P / Pnom));
+}
 
     if (copy.type === "voltmeter") {
       copy.display = `${Math.abs(dV).toFixed(2)} V`;
